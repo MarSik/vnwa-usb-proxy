@@ -7,9 +7,6 @@ import usb.util
 class VNWA(object):
     def __init__(self):
         self.usb = None
-        self.ep = None
-        # USB transfers
-        #self.ep.write('test')
 
     def detect_vnwa(self):
         # find our device
@@ -19,6 +16,8 @@ class VNWA(object):
         if dev is None:
             print('Device not found')
             return
+
+        print(f"Connected to {dev.product} by {dev.manufacturer}")
 
         # set the active configuration. With no arguments, the first
         # configuration will be the active one
