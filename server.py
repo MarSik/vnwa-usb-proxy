@@ -1,8 +1,22 @@
+"""USB proxy for D8SAQ's VNWA running in wine.
+
+Usage:
+  server.py [options]
+
+Options:
+  -d --debug  Enable debugging information
+"""
+
 import asyncio
+from docopt import docopt
+import logging
 
 # Using https://github.com/pyusb/pyusb
 import usb.core
 import usb.util
+
+LOG = logging.getLogger("VNWA")
+LOG_IO = logging.getLogger("VNWA.io")
 
 class VNWA(object):
     def __init__(self):
@@ -14,10 +28,10 @@ class VNWA(object):
 
         # was it found?
         if dev is None:
-            print('Device not found')
+            LOG.info('Device not found')
             return
 
-        print(f"Connected to {dev.product} by {dev.manufacturer}")
+        LOG.info(f"Connected to {dev.product} by {dev.manufacturer}")
 
         # set the active configuration. With no arguments, the first
         # configuration will be the active one
@@ -25,7 +39,7 @@ class VNWA(object):
         self.usb = dev
 
     def respond(self, writer, reply):
-        print(f"< {reply}")
+        LOG_IO.debug(f"< {reply}")
         writer.write(reply)
 
     def process_hellolinux(self, writer, cmd_num, *args):
@@ -48,11 +62,15 @@ class VNWA(object):
         dataorsize = data if len(data) == size else size
         ret = self.usb.ctrl_transfer(reqtype, request, value, index, dataorsize, timeout=timeout)
 
+        # The VNWA tool requires this, no idea why
         if reqtype == 64:
             asciized = " ".join(f"{d}" for d in data)
             self.respond(writer, f"{cmd_num} {size} {asciized}\x00".encode("ascii"))
+        # No response from usb write, return number of written bytes
         elif isinstance(ret, int):
             self.respond(writer, f"{cmd_num} {ret}\x00".encode("ascii"))
+
+        # usb read, return data
         else: # list
             asciized = " ".join(f"{d}" for d in ret)
             self.respond(writer, f"{cmd_num} {len(ret)} {asciized}\x00".encode("ascii"))
@@ -76,11 +94,11 @@ class VNWA(object):
             value=" ".join(str(ord(c)) for c in data)).encode("ascii"))
 
     async def __call__(self, reader, writer):
-        print("Client connected")
+        LOG_IO.info("Client connected")
         while True:
             # Read command
             data = await reader.readuntil(b"\x00")
-            print(f"> {data}")
+            LOG_IO.debug(f"> {data}")
             if not data or data[-1] != 0x00:
                 break
 
@@ -96,10 +114,17 @@ class VNWA(object):
 
         # Close connection
         writer.close()
-        print("Connection closed.")
+        LOG_IO.info("Connection closed.")
 
 
 if __name__ == "__main__":
+    args = docopt(__doc__)
+    if args["--debug"]:
+        logging.basicConfig(level=logging.DEBUG)
+    else:
+        logging.basicConfig(level=logging.INFO)
+    logging.getLogger("asyncio").setLevel(logging.WARN)
+
     vnwa = VNWA()
     vnwa.detect_vnwa()
     loop = asyncio.get_event_loop()
@@ -107,7 +132,7 @@ if __name__ == "__main__":
     server = loop.run_until_complete(coro)
 
     # Serve requests until Ctrl+C is pressed
-    print('Serving on {}'.format(server.sockets[0].getsockname()))
+    LOG.info('Serving on {}'.format(server.sockets[0].getsockname()))
     try:
         loop.run_forever()
     except KeyboardInterrupt:
