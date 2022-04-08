@@ -81,7 +81,7 @@ class VNWA(object):
 
     def process_quit(self, writer, cmd_num, *args):
         self.respond(writer, f"{cmd_num} quit\x00".encode("ascii"))
-        loop.stop()
+        #loop.stop()
 
     def process_getstrsmp(self, writer, cmd_num, req_type, *args):
         if req_type == '1':
@@ -116,6 +116,22 @@ class VNWA(object):
         writer.close()
         LOG_IO.info("Connection closed.")
 
+async def main(vnwa):
+    coro = await asyncio.start_server(vnwa, '127.0.0.1', 56789)
+
+    # Serve requests until Ctrl+C is pressed
+    addrs = ', '.join(str(sock.getsockname()) for sock in coro.sockets)
+    LOG.info(f'Serving on {addrs}')
+    try:
+        async with coro:
+            await coro.serve_forever()
+    except KeyboardInterrupt:
+        pass
+
+    # Close the server and collect the result
+    coro.close()
+    await coro.wait_closed()
+
 
 if __name__ == "__main__":
     args = docopt(__doc__)
@@ -127,20 +143,6 @@ if __name__ == "__main__":
 
     vnwa = VNWA()
     vnwa.detect_vnwa()
-    loop = asyncio.get_event_loop()
-    coro = asyncio.start_server(vnwa, '127.0.0.1', 56789, loop=loop)
-    server = loop.run_until_complete(coro)
+    asyncio.run(main(vnwa))
 
-    # Serve requests until Ctrl+C is pressed
-    LOG.info('Serving on {}'.format(server.sockets[0].getsockname()))
-    try:
-        loop.run_forever()
-    except KeyboardInterrupt:
-        pass
-
-    # Close the server and collect the result
-    server.close()
-    loop.run_until_complete(server.wait_closed())
-    
-    # Leave python to handle cleanup and loop.close()
 
